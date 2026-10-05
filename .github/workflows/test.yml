@@ -11,7 +11,7 @@ on:
       - "examples"
   push:
     branches:
-      - "main"
+      - "samba"
     paths-ignore:
       - "README.md"
       - "docs"
