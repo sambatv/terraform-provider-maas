@@ -91,6 +91,11 @@ func resourceMAASRAID() *schema.Resource {
 				Elem:        &schema.Schema{Type: schema.TypeString},
 				Description: "The list of spare partitions for the RAID.",
 			},
+			"virtual_device_id": {
+				Type:        schema.TypeString,
+				Computed:    true,
+				Description: "The ID of the virtual block device the RAID exposes. Pass this to `maas_volume_group`'s `block_devices` to build an LVM volume group on top of the RAID.",
+			},
 		},
 	}
 }
@@ -172,17 +177,18 @@ func resourceRAIDRead(ctx context.Context, d *schema.ResourceData, meta interfac
 
 	// Update the Terraform state
 	tfstate := map[string]interface{}{
-		"block_devices":    devices,
-		"fs_type":          raid.VirtualDevice.Filesystem.FSType,
-		"level":            strings.ReplaceAll(raid.Level, "raid-", ""),
-		"machine":          raid.SystemID,
-		"mount_options":    raid.VirtualDevice.Filesystem.MountOptions,
-		"mount_point":      raid.VirtualDevice.Filesystem.MountPoint,
-		"name":             raid.Name,
-		"partitions":       partitions,
-		"size_gigabytes":   int(math.Round(float64(raid.Size) / GigaBytes)),
-		"spare_devices":    spareDevices,
-		"spare_partitions": sparePartitions,
+		"block_devices":     devices,
+		"fs_type":           raid.VirtualDevice.Filesystem.FSType,
+		"level":             strings.ReplaceAll(raid.Level, "raid-", ""),
+		"machine":           raid.SystemID,
+		"mount_options":     raid.VirtualDevice.Filesystem.MountOptions,
+		"mount_point":       raid.VirtualDevice.Filesystem.MountPoint,
+		"name":              raid.Name,
+		"partitions":        partitions,
+		"size_gigabytes":    int(math.Round(float64(raid.Size) / GigaBytes)),
+		"spare_devices":     spareDevices,
+		"spare_partitions":  sparePartitions,
+		"virtual_device_id": fmt.Sprintf("%v", raid.VirtualDevice.ID),
 	}
 
 	if err := setTerraformState(d, tfstate); err != nil {
