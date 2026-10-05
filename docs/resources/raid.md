@@ -101,3 +101,4 @@ resource "maas_raid" "raid1" {
 
 - `id` (String) The ID of this resource.
 - `size_gigabytes` (Number) The volume size (given in GB).
+- `virtual_device_id` (String) The ID of the virtual block device the RAID exposes. Pass this to `maas_volume_group`'s `block_devices` to build an LVM volume group on top of the RAID.

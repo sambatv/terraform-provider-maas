@@ -68,6 +68,7 @@ func TestAccResourceMAASRAID_basic(t *testing.T) {
 					resource.TestCheckResourceAttr("maas_raid.test", "level", level),
 					resource.TestCheckResourceAttr("maas_raid.test", "fs_type", fsType),
 					resource.TestCheckResourceAttr("maas_raid.test", "mount_point", mountPoint),
+					resource.TestCheckResourceAttrSet("maas_raid.test", "virtual_device_id"),
 
 					resource.TestCheckResourceAttr("maas_raid.test", "block_devices.#", "1"),
 					resource.TestCheckResourceAttr("maas_raid.test", "partitions.#", "1"),
@@ -585,4 +586,65 @@ func verifyRAIDcollision(blockDevices []string, spareDevices []string, partition
 	}
 
 	return nil
+}
+
+// TestAccResourceMAASRAID_volumeGroup covers the reason virtual_device_id is
+// exported at all: MAAS lets a volume group sit on a RAID, but only by the ID of
+// the virtual block device the RAID exposes, and that ID is not derivable from
+// anything else the provider publishes — the RAID's own id is the filesystem
+// group's, and data.maas_machine filters virtual devices out.
+func TestAccResourceMAASRAID_volumeGroup(t *testing.T) {
+	machine := os.Getenv("TF_ACC_BLOCK_DEVICE_MACHINE")
+	blockDevice1Name := acctest.RandomWithPrefix("tf-raid-bd")
+	blockDevice2Name := acctest.RandomWithPrefix("tf-raid-bd")
+
+	// The RAID is left unformatted: a volume group cannot be built on a
+	// filesystem.
+	baseConfig := testAccRAIDMachine(machine) +
+		testAccRAIDBlockDevice(acctest.RandomWithPrefix("boot"), 2, true) +
+		testAccRAIDPartition(blockDevice1Name, 2, false) +
+		testAccRAIDPartition(blockDevice2Name, 2, false)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:     func() { testutils.PreCheck(t, []string{"TF_ACC_BLOCK_DEVICE_MACHINE"}) },
+		Providers:    testutils.TestAccProviders,
+		CheckDestroy: testAccCheclMAASRAIDDestroy,
+		ErrorCheck:   func(err error) error { return err },
+		Steps: []resource.TestStep{
+			{
+				Config: baseConfig + testAccRAIDConfig("vg RAID", "1", "", "",
+					[]string{},
+					generateRAIDPartitions([]string{blockDevice1Name, blockDevice2Name}),
+					[]string{},
+					[]string{},
+				) + testAccRAIDVolumeGroupConfig(),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckRAIDExists("maas_raid.test"),
+					resource.TestCheckResourceAttrSet("maas_raid.test", "virtual_device_id"),
+
+					// The volume group really was built on the RAID, and not on
+					// anything that merely happens to have the same size.
+					resource.TestCheckTypeSetElemAttrPair("maas_volume_group.test", "block_devices.0", "maas_raid.test", "virtual_device_id"),
+					resource.TestCheckResourceAttr("maas_logical_volume.test", "size_gigabytes", "1"),
+				),
+			},
+		},
+	})
+}
+
+func testAccRAIDVolumeGroupConfig() string {
+	return `
+resource "maas_volume_group" "test" {
+  machine       = data.maas_machine.machine.id
+  name          = "vg0"
+  block_devices = [maas_raid.test.virtual_device_id]
+}
+
+resource "maas_logical_volume" "test" {
+  machine        = data.maas_machine.machine.id
+  volume_group   = maas_volume_group.test.id
+  name           = "root"
+  size_gigabytes = 1
+}
+`
 }
